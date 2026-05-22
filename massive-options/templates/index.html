@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>0-DTE Lab v0.1.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js stack -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Syne:wght@400;700;800&display=swap');
+
+        * { box-sizing: border-box; }
+        body { font-family: 'JetBrains Mono', monospace; }
+        .display { font-family: 'Syne', sans-serif; }
+
+        .badge-fvg-bull {
+            background: rgba(34,197,94,0.08);
+            color: #4ade80;
+            border: 1px solid rgba(34,197,94,0.2);
+        }
+        .badge-fvg-bear {
+            background: rgba(239,68,68,0.08);
+            color: #f87171;
+            border: 1px solid rgba(239,68,68,0.2);
+        }
+        .badge-vol-spike {
+            background: rgba(234,179,8,0.08);
+            color: #facc15;
+            border: 1px solid rgba(234,179,8,0.2);
+        }
+
+        .stat-card {
+            background: rgba(15,23,42,0.6);
+            border: 1px solid rgba(51,65,85,0.5);
+            border-radius: 1rem;
+            padding: 1.25rem 1.5rem;
+        }
+
+        .gain-pos { color: #4ade80; }
+        .gain-neg { color: #f87171; }
+        .gain-flat { color: #60a5fa; }
+
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
+
+        .tab-btn {
+            padding: 0.4rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+        }
+        .tab-btn.active {
+            background: #2563eb;
+            color: white;
+        }
+        .tab-btn:not(.active) {
+            color: #64748b;
+            border-color: #1e293b;
+        }
+        .tab-btn:not(.active):hover { color: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen p-6 md:p-10" style="background-image: radial-gradient(ellipse at 20% 0%, rgba(37,99,235,0.04) 0%, transparent 60%);">
+
+<div class="max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <header class="mb-8 flex justify-between items-end">
+        <div>
+            <h1 class="text-5xl font-black text-blue-500 uppercase tracking-tighter italic display">0-DTE Lab</h1>
+            <p class="text-slate-600 text-[9px] font-black tracking-[0.35em] uppercase mt-1">Production v0.1.0 — Fair Value Gap Backtester</p>
+        </div>
+        <div class="text-right hidden md:block">
+            <p class="text-[9px] text-slate-600 uppercase tracking-widest">Press <kbd class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">⌘ Enter</kbd> to analyze</p>
+        </div>
+    </header>
+
+    <!-- Form -->
+    <form method="POST" id="mainForm" class="bg-slate-900/70 backdrop-blur p-8 rounded-3xl border border-slate-800/80 shadow-2xl mb-8">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-6">
+            <div>
+                <label class="block text-[9px] font-black text-slate-500 mb-2 uppercase tracking-widest">Symbol</label>
+                <input type="text" name="root" value="{{ form.root }}" placeholder="QQQ" required
+                    class="mono w-full p-4 bg-slate-800/80 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors text-sm font-bold">
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-slate-500 mb-2 uppercase tracking-widest">Exp Date</label>
+                <input type="date" name="date" value="{{ form.date }}" required
+                    class="mono w-full p-4 bg-slate-800/80 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors text-sm">
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-slate-500 mb-2 uppercase tracking-widest">Type</label>
+                <select name="type" class="mono w-full p-4 bg-slate-800/80 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors text-sm">
+                    <option value="C" {% if form.type == 'C' %}selected{% endif %}>Call ↑</option>
+                    <option value="P" {% if form.type == 'P' %}selected{% endif %}>Put ↓</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-slate-500 mb-2 uppercase tracking-widest">Strike</label>
+                <input type="number" step="0.5" name="strike" value="{{ form.strike }}" placeholder="464"
+                    class="mono w-full p-4 bg-slate-800/80 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors text-sm font-bold">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5 pt-6 border-t border-slate-800/60">
+            <div>
+                <label class="block text-[9px] font-black text-slate-500 mb-2 uppercase tracking-widest">Window Start</label>
+                <select name="start_hour" class="mono w-full p-4 bg-slate-800/80 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors text-sm">
+                    {% for t in time_options %}<option value="{{ t }}" {% if form.start_hour == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-slate-500 mb-2 uppercase tracking-widest">Window End</label>
+                <select name="end_hour" class="mono w-full p-4 bg-slate-800/80 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors text-sm">
+                    {% for t in time_options %}<option value="{{ t }}" {% if form.end_hour == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-blue-400 mb-2 uppercase tracking-widest">⚡ Signal Time</label>
+                <input type="text" name="signal_time" id="signal_time" value="{{ form.signal_time }}"
+                    placeholder="14:50" required
+                    class="mono w-full p-4 bg-slate-800/80 rounded-xl border-2 border-blue-900/50 outline-none focus:border-blue-500 transition-colors text-sm text-blue-300 font-bold">
+            </div>
+        </div>
+        <button type="submit" class="w-full mt-8 bg-blue-600 hover:bg-blue-500 active:scale-[0.99] py-5 rounded-xl font-black uppercase tracking-[0.25em] transition-all text-sm shadow-lg shadow-blue-900/20">
+            Analyze Move →
+        </button>
+    </form>
+
+    <!-- Report -->
+    {% if report %}
+        {% if report.error %}
+            <div class="bg-red-950/20 border border-red-500/30 p-8 rounded-2xl text-red-400 text-center font-bold mono text-sm">
+                ⚠ {{ report.error }}
+            </div>
+        {% else %}
+            <!-- Header Card -->
+            <div class="bg-slate-900/70 backdrop-blur rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden mb-6">
+                <div class="p-8 border-b border-slate-800/60 flex flex-wrap justify-between items-start gap-6">
+                    <div>
+                        <h2 class="text-3xl font-black mono tracking-tighter text-white">{{ report.ticker }}</h2>
+                        <p class="text-slate-500 text-[9px] font-black uppercase tracking-[0.3em] mt-1.5 mono">
+                            {{ report.date }} &nbsp;|&nbsp; {{ report.start_time }} – {{ report.end_time }}
+                        </p>
+                        <!-- Badges -->
+                        <div class="flex flex-wrap gap-2 mt-4">
+                            {% if report.fvg_confirmed %}
+                                {% set fvg_type = report.fvg_zones[0].type if report.fvg_zones else 'Unknown' %}
+                                {% set is_confirming = (fvg_type == 'Bullish' and report.trade_type == 'C') or (fvg_type == 'Bearish' and report.trade_type == 'P') %}
+                                {% if is_confirming %}
+                                <span style="background:rgba(34,197,94,0.1);color:#4ade80;border:1px solid rgba(34,197,94,0.3);" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">
+                                    ✓ FVG Confirms Trade ({{ fvg_type }})
+                                </span>
+                                {% else %}
+                                <span style="background:rgba(234,179,8,0.1);color:#facc15;border:1px solid rgba(234,179,8,0.3);" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">
+                                    ⚠ FVG Conflicts Trade ({{ fvg_type }} vs {{ 'Call' if report.trade_type == 'C' else 'Put' }})
+                                </span>
+                                {% endif %}
+                            {% else %}
+                                <span style="background:rgba(51,65,85,0.4);color:#64748b;border:1px solid rgba(51,65,85,0.5);" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">
+                                    — No FVG Near Signal
+                                </span>
+                            {% endif %}
+                            {% if report.volume_spike %}
+                                <span style="background:rgba(234,179,8,0.1);color:#facc15;border:1px solid rgba(234,179,8,0.3);" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">⚡ Vol Spike</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="text-right">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Signal Potential</p>
+                        <p class="text-6xl font-black mono
+                            {% if report.potential_gain > 0 %}gain-pos
+                            {% elif report.potential_gain < 0 %}gain-neg
+                            {% else %}gain-flat{% endif %}">
+                            {{ "%.1f"|format(report.potential_gain) }}%
+                        </p>
+                        <p class="text-[9px] text-slate-600 uppercase tracking-widest mt-1 mono">
+                            signal @ ${{ "%.2f"|format(report.signal_price or 0) }}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Chart Area -->
+                <div class="p-6 bg-slate-950/50">
+                    <div class="flex gap-2 mb-4">
+                        <button class="tab-btn active" id="btn-candle" onclick="switchChart('candle')">Candlestick</button>
+                        <button class="tab-btn" id="btn-line" onclick="switchChart('line')">Line</button>
+                        <button class="tab-btn" id="btn-vol" onclick="switchChart('vol')">Volume</button>
+                    </div>
+                    <div id="chart-candle"><canvas id="candleChart" height="110"></canvas></div>
+                    <div id="chart-line" class="hidden"><canvas id="lineChart" height="110"></canvas></div>
+                    <div id="chart-vol" class="hidden"><canvas id="volChart" height="80"></canvas></div>
+                </div>
+
+                <!-- Stats grid -->
+                <div class="p-8 grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-slate-800/60">
+                    <div class="stat-card">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 mono">Open → Close</p>
+                        <p class="text-xl font-black mono">${{ "%.2f"|format(report.start) }} <span class="text-slate-600">→</span> ${{ "%.2f"|format(report.end) }}</p>
+                    </div>
+                    <div class="stat-card">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 mono">High / Low</p>
+                        <p class="text-xl font-black mono">
+                            <span class="text-green-400">${{ "%.2f"|format(report.high) }}</span>
+                            <span class="text-slate-700"> / </span>
+                            <span class="text-red-400">${{ "%.2f"|format(report.low) }}</span>
+                        </p>
+                    </div>
+                    <div class="stat-card">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 mono">Window Return</p>
+                        <p class="text-xl font-black mono
+                            {% if report.return_pct > 0 %}gain-pos{% elif report.return_pct < 0 %}gain-neg{% else %}gain-flat{% endif %}">
+                            {{ "%.2f"|format(report.return_pct) }}%
+                        </p>
+                    </div>
+                    <div class="stat-card" style="border-color: rgba(37,99,235,0.3);">
+                        <p class="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1.5 mono">Signal @ {{ report.sig_time }}</p>
+                        <p class="text-xl font-black mono text-blue-400">${{ "%.2f"|format(report.signal_price or 0) }}</p>
+                    </div>
+                </div>
+
+                {% if report.expected_move %}
+                {% set em = report.expected_move %}
+                <div class="px-8 pb-8 border-t border-slate-800/60 pt-6">
+                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">⚖ Expected Move @ Signal (ATM Straddle)</p>
+                    <p class="text-[9px] text-slate-600 mb-4">Underlying price levels — the ± range the market priced into the {{ 'Call' if report.trade_type == 'C' else 'Put' }} at signal time</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="stat-card">
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">ATM Strike</p>
+                            <p class="text-xl font-black">${{ "%.0f"|format(em.atm_strike) }}</p>
+                            <p class="text-[9px] text-slate-600 mt-1">Underlying reference</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Straddle Cost</p>
+                            <p class="text-xl font-black text-yellow-400">${{ "%.2f"|format(em.straddle) }}</p>
+                            <p class="text-[9px] text-slate-600 mt-1">C ${{ "%.2f"|format(em.call_price) }} + P ${{ "%.2f"|format(em.put_price) }}</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Underlying EM ±</p>
+                            <p class="text-xl font-black text-yellow-400">${{ "%.2f"|format(em.em_dollar) }} <span class="text-slate-500 text-sm">({{ "%.1f"|format(em.em_pct) }}%)</span></p>
+                            <p class="text-[9px] text-slate-600 mt-1">1σ move expected in underlying</p>
+                        </div>
+                        <div class="stat-card" style="border-color: rgba(234,179,8,0.25);">
+                            <p class="text-[9px] font-black text-yellow-600 uppercase tracking-widest mb-1.5">Underlying ±1σ Range</p>
+                            <p class="text-lg font-black">
+                                <span class="text-green-400">${{ "%.2f"|format(em.upper_bound) }}</span>
+                                <span class="text-slate-600"> / </span>
+                                <span class="text-red-400">${{ "%.2f"|format(em.lower_bound) }}</span>
+                            </p>
+                            <p class="text-[9px] text-slate-600 mt-1">upper / lower</p>
+                        </div>
+                    </div>
+                    <!-- Option move vs underlying expected move -->
+                    {% if report.option_move is not none %}
+                    <div class="bg-slate-950/60 rounded-xl border border-slate-800/50 p-4 flex flex-wrap items-center gap-6">
+                        <div>
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Option Price Move</p>
+                            <p class="text-[9px] text-slate-600 mb-1">Signal open → window close</p>
+                            <p class="text-2xl font-black {% if report.option_move > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                                {{ "+" if report.option_move > 0 else "" }}${{ "%.2f"|format(report.option_move) }}
+                            </p>
+                        </div>
+                        <div class="text-slate-700 text-2xl font-black">|</div>
+                        <div>
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Underlying EM ±</p>
+                            <p class="text-[9px] text-slate-600 mb-1">Market-priced move in {{ report.ticker.split(':')[1][:3] if ':' in report.ticker else report.ticker }}</p>
+                            <p class="text-2xl font-black text-yellow-400">±${{ "%.2f"|format(em.em_dollar) }}</p>
+                        </div>
+                        <div class="ml-auto text-right">
+                            {% if report.option_move > 0 %}
+                                <span style="background:rgba(34,197,94,0.1);color:#4ade80;border:1px solid rgba(34,197,94,0.3);" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">✓ Option Profitable</span>
+                            {% else %}
+                                <span style="background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.3);" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">✗ Option Unprofitable</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if report.fvg_zones %}
+                <div class="px-8 pb-8 border-t border-slate-800/60 pt-6">
+                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3 mono">FVG Zones Near Signal</p>
+                    <div class="flex flex-wrap gap-3">
+                        {% for z in report.fvg_zones %}
+                        <div class="stat-card flex items-center gap-3" style="padding: 0.75rem 1rem;">
+                            <span class="w-2 h-2 rounded-full {% if z.type == 'Bullish' %}bg-green-400{% else %}bg-red-400{% endif %}"></span>
+                            <span class="mono text-xs font-bold">{{ z.type }}</span>
+                            <span class="mono text-xs text-slate-500">@ {{ z.label }}</span>
+                            <span class="mono text-xs">
+                                <span class="text-green-400">${{ "%.2f"|format(z.top) }}</span>
+                                <span class="text-slate-600"> / </span>
+                                <span class="text-red-400">${{ "%.2f"|format(z.bottom) }}</span>
+                            </span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endif %}
+</div>
+
+<script>
+// --- Keyboard shortcut: Cmd/Ctrl + Enter ---
+document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        document.getElementById('mainForm').submit();
+    }
+});
+
+// Always defined so onclick handlers never throw when no report is present
+const chartInstances = {};
+const builders = {};
+
+function switchChart(mode) {
+    ['candle', 'line', 'vol'].forEach(m => {
+        const el = document.getElementById(`chart-${m}`);
+        const btn = document.getElementById(`btn-${m}`);
+        if (el) el.classList.toggle('hidden', m !== mode);
+        if (btn) btn.classList.toggle('active', m === mode);
+    });
+    if (builders[mode] && !chartInstances[mode]) {
+        try {
+            builders[mode]();
+        } catch(e) {
+            console.error(`Chart build failed for ${mode}:`, e);
+        }
+    }
+}
+
+{% if report and not report.error %}
+// --- Data from Flask ---
+const chartLabels   = {{ report.chart_labels | tojson }};
+const ohlcData      = {{ report.chart_ohlc | tojson }};
+const volumeData    = {{ report.chart_volume | tojson }};
+const signalLabel   = {{ report.signal_label | tojson }};
+const signalTsMs    = {{ report.signal_ts_ms or 'null' }};
+const signalPrice   = {{ report.signal_price or 0 }};
+const fvgZones      = {{ report.fvg_zones | tojson }};
+const expectedMove  = {{ report.expected_move | tojson if report.expected_move else 'null' }};
+
+// --- Annotation: vertical signal line (for category-axis charts) ---
+function signalLineAnnotation() {
+    return {
+        type: 'line',
+        scaleID: 'x',
+        value: signalLabel,
+        borderColor: 'rgba(96,165,250,0.8)',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        label: {
+            display: true,
+            content: `⚡ ${signalLabel}`,
+            position: 'start',
+            backgroundColor: 'rgba(37,99,235,0.9)',
+            color: '#fff',
+            font: { family: 'JetBrains Mono', size: 10, weight: 'bold' },
+            padding: { x: 8, y: 4 },
+            borderRadius: 4
+        }
+    };
+}
+
+// --- Annotation: vertical signal line (for time-axis candlestick chart) ---
+function signalLineAnnotationTime() {
+    return {
+        type: 'line',
+        scaleID: 'x',
+        value: signalTsMs,
+        borderColor: 'rgba(96,165,250,0.8)',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        label: {
+            display: true,
+            content: `⚡ ${signalLabel}`,
+            position: 'start',
+            backgroundColor: 'rgba(37,99,235,0.9)',
+            color: '#fff',
+            font: { family: 'JetBrains Mono', size: 10, weight: 'bold' },
+            padding: { x: 8, y: 4 },
+            borderRadius: 4
+        }
+    };
+}
+
+// --- FVG box annotations for time-axis (candlestick) ---
+function fvgAnnotationsTime() {
+    return fvgZones.map((z) => {
+        const xMinMs = ohlcData.find(d => {
+            const label = new Date(d.x).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', hour12:false});
+            return label === z.label || label.replace(':','') === z.label.replace(':','');
+        })?.x ?? null;
+        const xMaxMs = xMinMs ? xMinMs + (4 * 60 * 1000) : null;
+        return {
+            type: 'box',
+            xMin: xMinMs,
+            xMax: xMaxMs,
+            yMin: z.bottom,
+            yMax: z.top,
+            backgroundColor: z.type === 'Bullish' ? 'rgba(74,222,128,0.08)' : 'rgba(248,113,113,0.08)',
+            borderColor: z.type === 'Bullish' ? 'rgba(74,222,128,0.35)' : 'rgba(248,113,113,0.35)',
+            borderWidth: 1,
+            label: {
+                display: true,
+                content: z.type === 'Bullish' ? '▲ FVG' : '▼ FVG',
+                position: { x: 'start', y: 'start' },
+                color: z.type === 'Bullish' ? '#4ade80' : '#f87171',
+                font: { family: 'JetBrains Mono', size: 9, weight: 'bold' },
+                padding: { x: 4, y: 2 }
+            }
+        };
+    });
+}
+
+// --- FVG box annotations for category-axis (line/volume charts) ---
+function fvgAnnotations() {
+    return fvgZones.map((z) => ({
+        type: 'box',
+        xMin: z.label,
+        xMax: chartLabels[Math.min(chartLabels.indexOf(z.label) + 4, chartLabels.length - 1)],
+        yMin: z.bottom,
+        yMax: z.top,
+        backgroundColor: z.type === 'Bullish' ? 'rgba(74,222,128,0.08)' : 'rgba(248,113,113,0.08)',
+        borderColor: z.type === 'Bullish' ? 'rgba(74,222,128,0.35)' : 'rgba(248,113,113,0.35)',
+        borderWidth: 1,
+        label: {
+            display: true,
+            content: z.type === 'Bullish' ? '▲ FVG' : '▼ FVG',
+            position: { x: 'start', y: 'start' },
+            color: z.type === 'Bullish' ? '#4ade80' : '#f87171',
+            font: { family: 'JetBrains Mono', size: 9, weight: 'bold' },
+            padding: { x: 4, y: 2 }
+        }
+    }));
+}
+
+// --- Expected move horizontal band annotations ---
+// NOTE: EM bounds are underlying price levels (e.g. 703.50 / 696.50).
+// The option chart Y-axis shows option prices (e.g. $1–$15), so EM lines
+// are intentionally omitted from price charts to avoid scale distortion.
+// They are displayed in the stats cards instead.
+function emAnnotations() {
+    return {};  // reserved for future underlying-price chart view
+}
+
+const candleAnnotations = {
+    signalLine: signalLineAnnotationTime(),
+    ...Object.fromEntries(fvgAnnotationsTime().map((a, i) => [`fvg${i}`, a]))
+};
+const categoryAnnotations = {
+    signalLine: signalLineAnnotation(),
+    ...Object.fromEntries(fvgAnnotations().map((a, i) => [`fvg${i}`, a]))
+};
+
+// ─── Chart instances (lazy init) ─────────────────────────────────────
+
+function buildCandleChart() {
+    const ctx = document.getElementById('candleChart').getContext('2d');
+    chartInstances.candle = new Chart(ctx, {
+        type: 'candlestick',
+        data: {
+            datasets: [{
+                label: 'OHLC',
+                data: ohlcData,
+                color: { up: '#4ade80', down: '#f87171', unchanged: '#94a3b8' },
+                borderColor: { up: '#4ade80', down: '#f87171', unchanged: '#94a3b8' }
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'minute', displayFormats: { minute: 'HH:mm' }, tooltipFormat: 'HH:mm' },
+                    grid: { display: false },
+                    ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 12 }
+                },
+                y: {
+                    position: 'right',
+                    grid: { color: 'rgba(30,41,59,0.8)' },
+                    ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 }, callback: v => '$' + v.toFixed(2) }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: { annotations: candleAnnotations },
+                tooltip: {
+                    backgroundColor: '#0f172a', borderColor: '#1e293b', borderWidth: 1,
+                    titleFont: { family: 'JetBrains Mono', size: 11 },
+                    bodyFont: { family: 'JetBrains Mono', size: 11 },
+                    callbacks: {
+                        label: ctx => {
+                            const d = ctx.raw;
+                            return d ? [`O: $${d.o?.toFixed(2)}  H: $${d.h?.toFixed(2)}`, `L: $${d.l?.toFixed(2)}  C: $${d.c?.toFixed(2)}`] : '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function buildLineChart() {
+    const ctx = document.getElementById('lineChart').getContext('2d');
+    chartInstances.line = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: 'Close',
+                data: ohlcData.map(d => d.c),
+                borderColor: '#3b82f6', borderWidth: 2.5,
+                fill: true, backgroundColor: 'rgba(59,130,246,0.05)',
+                tension: 0.3, pointRadius: 0, pointHoverRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 12 } },
+                y: { position: 'right', grid: { color: 'rgba(30,41,59,0.8)' }, ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 }, callback: v => '$' + v.toFixed(2) } }
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: { annotations: categoryAnnotations },
+                tooltip: { backgroundColor: '#0f172a', borderColor: '#1e293b', borderWidth: 1, titleFont: { family: 'JetBrains Mono', size: 11 }, bodyFont: { family: 'JetBrains Mono', size: 11 } }
+            }
+        }
+    });
+}
+
+function buildVolChart() {
+    const avgVol = volumeData.reduce((a, b) => a + b, 0) / volumeData.length;
+    const volAnnotations = {
+        avgLine: {
+            type: 'line', scaleID: 'y', value: avgVol,
+            borderColor: 'rgba(148,163,184,0.4)', borderWidth: 1, borderDash: [4, 4],
+            label: { display: true, content: 'avg', position: 'end', backgroundColor: 'transparent', color: '#475569', font: { family: 'JetBrains Mono', size: 9 } }
+        }
+    };
+    // Only add signal line if we have a label (avoid undefined annotation)
+    if (signalLabel) {
+        volAnnotations.signalVol = {
+            type: 'line', scaleID: 'x', value: signalLabel,
+            borderColor: 'rgba(96,165,250,0.6)', borderWidth: 2, borderDash: [6, 4]
+        };
+    }
+
+    const ctx = document.getElementById('volChart').getContext('2d');
+    chartInstances.vol = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: 'Volume',
+                data: volumeData,
+                backgroundColor: volumeData.map(v =>
+                    v > avgVol * 2 ? 'rgba(250,204,21,0.7)' :
+                    v > avgVol     ? 'rgba(96,165,250,0.5)' :
+                                     'rgba(51,65,85,0.6)'
+                ),
+                borderRadius: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: { grid: { display: false }, ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 12 } },
+                y: { position: 'right', grid: { color: 'rgba(30,41,59,0.8)' }, ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 } } }
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: { annotations: volAnnotations },
+                tooltip: { backgroundColor: '#0f172a', borderColor: '#1e293b', borderWidth: 1, titleFont: { family: 'JetBrains Mono', size: 11 }, bodyFont: { family: 'JetBrains Mono', size: 11 } }
+            }
+        }
+    });
+}
+
+// ─── Tab switcher (lazy init) ─────────────────────────────────────────
+builders.candle = buildCandleChart;
+builders.line   = buildLineChart;
+builders.vol    = buildVolChart;
+
+function switchChart(mode) {
+    ['candle', 'line', 'vol'].forEach(m => {
+        document.getElementById(`chart-${m}`).classList.toggle('hidden', m !== mode);
+        document.getElementById(`btn-${m}`).classList.toggle('active', m === mode);
+    });
+    if (!chartInstances[mode]) {
+        try {
+            builders[mode]();
+        } catch(e) {
+            console.error(`Chart build failed for ${mode}:`, e);
+        }
+    }
+}
+
+// Defer so the browser has painted the canvas before Chart.js measures it
+setTimeout(() => {
+    try {
+        buildCandleChart();
+    } catch(e) {
+        console.error('Candlestick init failed:', e);
+    }
+}, 0);
+{% endif %}
+</script>
+</body>
+</html>
